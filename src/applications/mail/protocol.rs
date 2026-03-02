@@ -58,7 +58,9 @@ impl Protocol for Smtp {
                                 .trim_start_matches("from:")
                                 .trim_matches(&['<','>','\r','\n'][..])
                                 .to_string();
+
                             session.from = cleaned;
+                            reply = "250 Ok\r\n".to_string();
                         }else {
                             reply = "501 Syntax error\r\n".to_string();
                         }
@@ -70,7 +72,9 @@ impl Protocol for Smtp {
                                 .trim_start_matches("to:")
                                 .trim_matches(&['<','>','\r','\n'][..])
                                 .to_string();
+
                             session.to.push(cleaned);
+                            reply = "250 Ok\r\n".to_string();
                         }else {
                             reply = "501 Syntax error\r\n".to_string();
                         }
