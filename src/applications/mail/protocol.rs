@@ -29,7 +29,7 @@ impl Protocol for Smtp {
                 match line_buf.trim_end_matches(&['\r','\n'][..]) {
                     "." => {
                         session.is_data = false;
-                        stream.write_all(b"250 Ok")?;
+                        stream.write_all(b"250 Ok\r\n")?;
                         continue;
                     },
                     "" => {
@@ -49,7 +49,7 @@ impl Protocol for Smtp {
                 match command {
                     "EHLO" => {
                         let client = line_iter.next().unwrap_or("");
-                        reply = format!("250 Hello {}", client);
+                        reply = format!("250 Hello {}\r\n", client);
                     }
                     "MAIL" => {
                         if let Some(sender) = line_iter.next() {
@@ -76,11 +76,11 @@ impl Protocol for Smtp {
                         }
                     }
                     "DATA" => {
-                        reply = "354 End data with <CR><LF>.<CR><LF>".to_string();
+                        reply = "354 End data with <CR><LF>.<CR><LF>\r\n".to_string();
                         session.is_data = true;
                     }
                     "QUIT" => {
-                        stream.write_all("221 Bye".to_string().as_bytes())?;
+                        stream.write_all("221 Bye\r\n".to_string().as_bytes())?;
                         break;
                     },
                     _ => { reply = format!("500 Unknown command: {}\r\n", command); }
