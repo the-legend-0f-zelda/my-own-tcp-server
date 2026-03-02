@@ -36,9 +36,11 @@ impl Protocol for Smtp {
                         session.is_content = true;
                     },
                     _ => {
-                        session.content.push_str(
-                            &line_buf.trim_end_matches( &['\r','\n'][..] )
-                        );
+                        if session.is_content {
+                            session.content.push_str(
+                                &line_buf.trim_end_matches( &['\r','\n'][..] )
+                            );
+                        }
                     }
                 }
             }else {
