@@ -60,8 +60,8 @@ impl Protocol for Smtp {
                         }
                     },
                     "EHLO" => {
-                        let client = line_iter.next().unwrap_or("");
-                        reply = format!("250-STARTTLS {}\r\n", client);
+                        //let client = line_iter.next().unwrap_or("");
+                        reply = "250-STARTTLS {}\r\n".to_string();
                     }
                     "MAIL" => {
                         if let Some(sender) = line_iter.next() {
@@ -116,7 +116,7 @@ impl Protocol for Smtp {
         let mut tls_stream = StreamOwned::new(conn, stream);
         session = SmtpSession::new();
 
-        tls_stream.write_all(b"220 2.0.0 Ready to start TLS")?;
+        tls_stream.write_all(b"220 2.0.0 Ready to start TLS\r\n")?;
 
         loop {
             line_buf.clear();
