@@ -61,7 +61,7 @@ impl Protocol for Smtp {
                     },
                     "EHLO" => {
                         //let client = line_iter.next().unwrap_or("");
-                        reply = "250-STARTTLS {}\r\n".to_string();
+                        reply = "250 STARTTLS\r\n".to_string();
                     }
                     "MAIL" => {
                         if let Some(sender) = line_iter.next() {
