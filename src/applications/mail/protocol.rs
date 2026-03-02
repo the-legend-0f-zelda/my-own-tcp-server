@@ -50,7 +50,7 @@ impl Protocol for Smtp {
                 let command:&str = line_iter.next().unwrap_or("");
                 let mut reply = String::new();
 
-                match command {
+                match command.to_uppercase().as_str() {
                     "STARTTLS" => {
                         if let Some(ref _tls_config) = config {
                             use_tls = true;
@@ -146,7 +146,7 @@ impl Protocol for Smtp {
                 let command:&str = line_iter.next().unwrap_or("");
                 let mut reply = String::new();
 
-                match command {
+                match command.to_uppercase().as_str() {
                     "EHLO" => {
                         let client = line_iter.next().unwrap_or("");
                         reply = format!("250 Hello {}\r\n", client);
