@@ -10,14 +10,14 @@ pub struct Smtp {
     domain: String
 }
 impl Protocol for Smtp {
-    fn handle_connection(&self, mut stream:TcpStream, peer: SocketAddr, config: Option<Arc<ServerConfig>>)
+    fn handle_connection(&self, mut stream:TcpStream, _peer: SocketAddr, _config: Option<Arc<ServerConfig>>)
         -> Result<(), Box<dyn Error>>
     {
         let msg_ready = format!("220 {} ESMTP ready\r\n", &self.domain);
         stream.write_all(msg_ready.as_bytes())?;
 
         let mut line_buf = String::new();
-        let mut reader = BufReader::new(&stream);
+        let mut reader = BufReader::new(stream.try_clone()?);
         let mut session = SmtpSession::new();
 
         loop {
