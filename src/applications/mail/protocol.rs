@@ -59,7 +59,7 @@ impl Protocol for Smtp {
                             reply = format!("500 Unknown command: {}\r\n", command);
                         }
                     },
-                    "EHLO" => {
+                    "EHLO" | "HELO" => {
                         //let client = line_iter.next().unwrap_or("");
                         reply = "250 STARTTLS\r\n".to_string();
                     }
@@ -148,7 +148,7 @@ impl Protocol for Smtp {
                 let mut reply = String::new();
 
                 match command.to_uppercase().as_str() {
-                    "EHLO" => {
+                    "EHLO" | "HELO" => {
                         let client = line_iter.next().unwrap_or("");
                         reply = format!("250 Hello {}\r\n", client);
                     }
