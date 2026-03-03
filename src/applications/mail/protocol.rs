@@ -111,13 +111,12 @@ impl Protocol for Smtp {
         if !use_tls {return Ok(())}
         println!("!!!! START TLS !!!!");
 
+        stream.write_all(b"220 2.0.0 Ready to start TLS\r\n")?;
+        stream.flush()?;
 
         let conn = ServerConnection::new(config.unwrap().clone())?;
         let mut tls_stream = StreamOwned::new(conn, stream);
         session = SmtpSession::new();
-
-        tls_stream.write_all(b"220 2.0.0 Ready to start TLS\r\n")?;
-        tls_stream.flush()?;
 
         loop {
             line_buf.clear();
