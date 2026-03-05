@@ -25,7 +25,7 @@ impl Protocol for Smtp {
 
         loop {
             line_buf.clear();
-            if reader.read_line(&mut line_buf)? == 0 { return self.post_handle(session); }
+            if reader.read_line(&mut line_buf)? == 0 { return (self.post_handle)(session); }
 
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
@@ -47,7 +47,7 @@ impl Protocol for Smtp {
 
         loop {
             line_buf.clear();
-            if tls_stream.read_line(&mut line_buf)? == 0 { return self.post_handle(session); }
+            if tls_stream.read_line(&mut line_buf)? == 0 { return (self.post_handle)(session); }
 
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
