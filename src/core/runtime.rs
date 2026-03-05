@@ -40,21 +40,23 @@ impl Server {
     }
 
     pub fn start(self) {
-        let server = Arc::new(self);
         let mut join_handles:Vec<JoinHandle<()>> = Vec::new();
+        let server = Arc::new(self);
 
         for port in &server.ports {
             let server_clone = server.clone();
             let port_clone = port.clone();
 
+            port.protocol
+                .write().unwrap()
+                .set_config(&server.tls_config);
+
             let port_handle = thread::spawn(move || {
                 server_clone.listen_port(port_clone);
             });
-
             join_handles.push(port_handle);
         }
 
-        // block main thread
         for handle in join_handles {
             handle.join().unwrap();
         }
@@ -89,7 +91,6 @@ impl Server {
                 Ok(peer) => peer,
                 Err(_e) => continue // TODO LOG ERROR
             };
-            let tls_config = self.tls_config.clone();
             let protocol_lock = Arc::clone(&protocol);
 
             let task:Task = Box::new(move || {
@@ -99,7 +100,7 @@ impl Server {
                         return Err(Box::new(PoisonError::new(e.to_string())));
                     } // TODO LOG ERROR
                 };
-                match protocol.handle_connection(stream, peer, tls_config) {
+                match protocol.handle_connection(stream, peer) {
                     Ok(result) => { Ok(result) }, // todo log_connection ?
                     Err(e) => {
                         println!("Error handling connection: {:?}", e);

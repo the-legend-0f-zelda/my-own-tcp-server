@@ -4,7 +4,7 @@ use std::io;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
-use rustls::{ServerConnection, StreamOwned};
+use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use serde_json::Value;
 use crate::applications::web::default::*;
 use crate::applications::web::http::{Action, HttpRequest, HttpResponse, Method};
@@ -32,14 +32,14 @@ impl Handler {
 
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
+    config: Option<Arc<ServerConfig>>,
 }
 
 impl Protocol for Http {
-    fn handle_connection(&self, stream: TcpStream, peer:SocketAddr, tls_config:Option<Arc<rustls::ServerConfig>>)
-        -> Result<(), Box<dyn Error>>
+    fn handle_connection(&self, stream: TcpStream, peer:SocketAddr) -> Result<(), Box<dyn Error>>
     {
-        let mut stream_to_handle:Box<dyn ReadWrite> = match tls_config {
-            Some(ref config) => {
+        let mut stream_to_handle:Box<dyn ReadWrite> = match self.get_config() {
+            Some(config) => {
                 let conn = ServerConnection::new(config.clone())?;
                 let tls_stream = StreamOwned::new(conn, stream);
                 Box::new(tls_stream)
@@ -119,11 +119,22 @@ impl Protocol for Http {
 
         Ok(())
     }
+
+    fn set_config(&mut self, config: &Option<Arc<ServerConfig>>) {
+        self.config = match *config {
+            Some(ref config) => Some(config.clone()),
+            None => None
+        };
+    }
+    fn get_config(&self) -> &Option<Arc<ServerConfig>> { &self.config }
 }
 
 impl Http {
     pub fn new() -> Self {
-        Self{ handlers: HashMap::new()}
+        Self{
+            handlers: HashMap::new(),
+            config: None
+        }
     }
 
     fn parse_request_line(reader:&mut BufReader<&mut dyn ReadWrite>, params:&mut Value)

@@ -42,18 +42,18 @@ fn main() {
         Ok(())
     });
 
-    //let cert_file = &mut BufReader::new(File::open("./cert/cert.pem").unwrap());
-    //let key_file = &mut BufReader::new(File::open("./cert/key.pem").unwrap());
-    //let certs = certs(cert_file).collect::<Result<Vec<_>, _>>().unwrap();
-    //let key = pkcs8_private_keys(key_file)
-    //    .next().unwrap().unwrap();
+    /*let cert_file = &mut BufReader::new(File::open("./cert/cert.pem").unwrap());
+    let key_file = &mut BufReader::new(File::open("./cert/key.pem").unwrap());
+    let certs = certs(cert_file).collect::<Result<Vec<_>, _>>().unwrap();
+    let key = pkcs8_private_keys(key_file)
+        .next().unwrap().unwrap();
 
-    //let tls_config = ServerConfig::builder()
-    //    .with_no_client_auth()
-    //    .with_single_cert(certs, key.into())
-    //    .unwrap();
+    let tls_config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key.into())
+        .unwrap();
 
-    //http_server::start(vec![7070, 8080, 8081, 8082, 443], 2, Some(tls_config));
+    http_server::start(vec![7070, 8080, 8081, 8082, 443], 2, Some(tls_config));*/
 
     let mail_proc = Arc::new(RwLock::new(Smtp::new("scamsite.biz")));
     let mail_server = Server::new(vec![Port::new(25, mail_proc)], 3);

@@ -7,10 +7,11 @@ use crate::applications::mail::smtp::SmtpSession;
 use crate::applications::model::Protocol;
 
 pub struct Smtp {
-    domain: String
+    domain: String,
+    config: Option<Arc<ServerConfig>>,
 }
 impl Protocol for Smtp {
-    fn handle_connection(&self, mut stream:TcpStream, _peer: SocketAddr, config: Option<Arc<ServerConfig>>)
+    fn handle_connection(&self, mut stream:TcpStream, _peer: SocketAddr)
         -> Result<(), Box<dyn Error>>
     {
         let msg_ready = format!("220 {} ESMTP ready\r\n", &self.domain);
@@ -52,7 +53,7 @@ impl Protocol for Smtp {
 
                 match command.to_uppercase().as_str() {
                     "STARTTLS" => {
-                        if let Some(ref _tls_config) = config {
+                        if let Some(_tls_config) = self.get_config() {
                             use_tls = true;
                             break;
                         }else {
@@ -107,14 +108,12 @@ impl Protocol for Smtp {
             }
         }
 
-
         if !use_tls {return Ok(())}
-        println!("!!!! START TLS !!!!");
 
         stream.write_all(b"220 2.0.0 Ready to start TLS\r\n")?;
         stream.flush()?;
 
-        let conn = ServerConnection::new(config.unwrap().clone())?;
+        let conn = ServerConnection::new(self.config.clone().unwrap())?;
         let mut tls_stream = StreamOwned::new(conn, stream);
         session = SmtpSession::new();
 
@@ -198,10 +197,108 @@ impl Protocol for Smtp {
         println!("result: {:#?}", session);
         Ok(())
     }
+
+    fn set_config(&mut self, config: &Option<Arc<ServerConfig>>) {
+        self.config = match *config {
+            Some(ref config) => Some(config.clone()),
+            None => None
+        };
+    }
+    fn get_config(&self) -> &Option<Arc<ServerConfig>> { &self.config }
 }
 
 impl Smtp {
     pub fn new(domain:&str) -> Self {
-        Self {domain: domain.to_string()}
+        Self {
+            domain: domain.to_string(),
+            config: None
+        }
     }
+
+    /*pub fn build_response(incoming:&str, session:&mut SmtpSession) -> Option<String> {
+        println!("{}", incoming);
+        let mut reply = None;
+
+        if session.is_data {
+            match incoming.trim_end_matches(&['\r','\n'][..]) {
+                "." => {
+                    session.is_data = false;
+                    return Some(String::from("250 Ok\r\n"));
+                },
+                "" => {
+                    session.is_content = true;
+                    return None
+                },
+                _ => {
+                    if session.is_content {
+                        session.content.push_str(
+                            incoming.trim_end_matches( &['\r','\n'][..] )
+                        );
+                    }
+                    return None;
+                }
+            }
+        }else {
+            let mut line_iter = incoming.split_whitespace();
+            let command:&str = line_iter.next().unwrap_or("");
+
+            match command.to_uppercase().as_str() {
+                "STARTTLS" => {
+                    /*if let Some(ref _tls_config) = config {
+                        use_tls = true;
+                        break;
+                    }else {
+                        reply = format!("500 Unknown command: {}\r\n", command);
+                    }*/
+                    session.use_tls = true;
+                    return None;
+                },
+                "EHLO" | "HELO" => {
+                    //let client = line_iter.next().unwrap_or("");
+                    reply = "250 STARTTLS\r\n".to_string();
+                    return Some(String::from("250 Hello {}\r\n"));
+                }
+                "MAIL" => {
+                    if let Some(sender) = line_iter.next() {
+                        let cleaned = sender
+                            .trim_start_matches("FROM:")
+                            .trim_start_matches("from:")
+                            .trim_matches(&['<','>','\r','\n'][..])
+                            .to_string();
+
+                        session.from = cleaned;
+                        reply = "250 Ok\r\n".to_string();
+                    }else {
+                        reply = "501 Syntax error\r\n".to_string();
+                    }
+                }
+                "RCPT" => {
+                    if let Some(receiver) = line_iter.next() {
+                        let cleaned = receiver
+                            .trim_start_matches("TO:")
+                            .trim_start_matches("to:")
+                            .trim_matches(&['<','>','\r','\n'][..])
+                            .to_string();
+
+                        session.to.push(cleaned);
+                        reply = "250 Ok\r\n".to_string();
+                    }else {
+                        reply = "501 Syntax error\r\n".to_string();
+                    }
+                }
+                "DATA" => {
+                    reply = "354 End data with <CR><LF>.<CR><LF>\r\n".to_string();
+                    session.is_data = true;
+                }
+                "QUIT" => {
+                    stream.write_all("221 Bye\r\n".to_string().as_bytes())?;
+                    break;
+                },
+                _ => { reply = format!("500 Unknown command: {}\r\n", command); }
+            }
+
+            println!("reply: {}", reply);
+            stream.write_all(reply.as_bytes())?;
+        }
+    }*/
 }
