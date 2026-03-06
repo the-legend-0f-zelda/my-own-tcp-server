@@ -86,32 +86,28 @@ impl Protocol for Http {
             _ => Value::Null
         };
 
-        match self.handlers.get(&request_line) {
-            Some(handler) => {
-                handler.execute(
-                    HttpRequest::new(
-                        request_line.0, request_line.1, header,
-                        query_params, body_params, peer
-                    ),
-                    HttpResponse::new(stream_to_handle, 200, HashMap::new())
-                )?;
-            },
 
+        let request = HttpRequest::new (
+            request_line.0, request_line.1, header,
+            query_params, body_params, peer
+        );
+        let mut response = HttpResponse::new(
+            stream_to_handle, 200, HashMap::new()
+        );
+
+        match self.handlers.get(&(request.method.clone(), request.endpoint.clone())) {
+            Some(handler) => {
+                handler.execute(request, response)?;
+            },
             None => {
                 // 와일드카드 검색
-                match self.search_wildcard(&request_line.0, request_line.1.as_str()){
+                match self.search_wildcard(&request.method, &request.endpoint.as_str()){
                     Some(wildcard_handler) => {
-                        wildcard_handler.execute(
-                            HttpRequest::new(
-                                request_line.0, request_line.1, header,
-                                query_params, body_params, peer
-                            ),
-                            HttpResponse::new(stream_to_handle, 200, HashMap::new())
-                        )?;
+                        wildcard_handler.execute(request, response)?;
                     },
                     None => {
                         // 핸들러 없음 => 404
-                        stream_to_handle.write_all(NOT_FOUND)?;
+                        response.write_bytes(NOT_FOUND)?;
                     }
                 }
             }
@@ -126,6 +122,7 @@ impl Protocol for Http {
             None => None
         };
     }
+
     fn get_config(&self) -> &Option<Arc<ServerConfig>> { &self.config }
 }
 

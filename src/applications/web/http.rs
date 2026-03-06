@@ -78,6 +78,11 @@ impl HttpResponse {
         Ok(self.stream.write_all(data.as_bytes())?)
     }
 
+    pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
+        self.stream.write_all(data)?;
+        Ok(())
+    }
+
     pub fn write_value(&mut self, value:Value) -> Result<(), Box<dyn Error>> {
         let value_str = value.to_string();
         self.set_header("content-length", value_str.len().to_string().as_str());

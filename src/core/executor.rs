@@ -67,6 +67,7 @@ impl ThreadPool {
     pub fn new(size:u16) -> Self {
         let queue = Arc::new(TaskQueue::new());
         let mut workers:Vec<Worker> = Vec::with_capacity(size as usize);
+
         for _ in 0..size {
             workers.push(
                 Worker::spawn(Arc::clone(&queue))

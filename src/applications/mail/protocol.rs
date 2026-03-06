@@ -13,11 +13,9 @@ pub struct Smtp {
     post_handle: fn(SmtpSession) -> Result<(), Box<dyn Error>>,
 }
 impl Protocol for Smtp {
-    fn handle_connection(&self, mut stream:TcpStream, _peer: SocketAddr)
-        -> Result<(), Box<dyn Error>>
+    fn handle_connection(&self, mut stream:TcpStream, _peer: SocketAddr) -> Result<(), Box<dyn Error>>
     {
-        let msg_ready = format!("220 {} ESMTP ready\r\n", &self.domain);
-        stream.write_all(msg_ready.as_bytes())?;
+        stream.write_all( format!("220 {} ESMTP ready\r\n", &self.domain).as_bytes() )?;
 
         let mut line_buf = String::new();
         let mut reader = BufReader::new(stream.try_clone()?);
@@ -30,11 +28,10 @@ impl Protocol for Smtp {
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
                 Some(response) => {
-                    println!("response: {}", response);
                     stream.write_all(response.as_bytes())?;
                     if session.quit == true { return (self.post_handle)(session); }
                 },
-                None => { if session.use_tls == true { break; } }
+                None => { if session.use_tls == true {break;} }
             }
         }
 
@@ -53,7 +50,6 @@ impl Protocol for Smtp {
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
                 Some(response) => {
-                    println!("response: {}", &response);
                     tls_stream.write_all(response.as_bytes())?;
                     tls_stream.flush()?;
                     if session.quit == true { return (self.post_handle)(session); }
@@ -82,9 +78,8 @@ impl Smtp {
     }
 
     pub fn build_response(&self, incoming:&str, session:&mut SmtpSession) -> Option<String> {
-        println!("{}", incoming);
         if session.is_data {
-            match incoming.trim_end_matches(&['\r','\n'][..]) {
+            return match incoming.trim_end_matches(&['\r','\n'][..]) {
                 "." => {
                     session.is_data = false;
                     Some(String::from("250 Ok\r\n"))
@@ -102,65 +97,65 @@ impl Smtp {
                     None
                 }
             }
-        }else {
-            let mut line_iter = incoming.split_whitespace();
-            let command:&str = line_iter.next().unwrap_or("");
+        }
 
-            match command.to_uppercase().as_str() {
-                "STARTTLS" => {
-                    if self.config.is_some() {
-                        session.use_tls = true;
-                        None
-                    }else {
-                        Some(format!("500 Unknown command: {}\r\n", command))
-                    }
-                },
-                "EHLO" | "HELO" => {
-                    if self.get_config().is_some() {
-                        Some(String::from("250 STARTTLS\r\n"))
-                    }else {
-                        Some(String::from("250 Hello {}\r\n"))
-                    }
-                }
-                "MAIL" => {
-                    if let Some(sender) = line_iter.next() {
-                        let cleaned = sender
-                            .trim_start_matches("FROM:")
-                            .trim_start_matches("from:")
-                            .trim_matches(&['<','>','\r','\n'][..])
-                            .to_string();
+        let mut line_iter = incoming.split_whitespace();
+        let command:&str = line_iter.next().unwrap_or("");
 
-                        session.from = cleaned;
-                        Some(String::from("250 Ok\r\n"))
-                    }else {
-                        Some(String::from("501 Syntax error\r\n"))
-                    }
-                }
-                "RCPT" => {
-                    if let Some(receiver) = line_iter.next() {
-                        let cleaned = receiver
-                            .trim_start_matches("TO:")
-                            .trim_start_matches("to:")
-                            .trim_matches(&['<','>','\r','\n'][..])
-                            .to_string();
-
-                        session.to.push(cleaned);
-                        Some(String::from("250 Ok\r\n"))
-                    }else {
-                        Some(String::from("501 Syntax error\r\n"))
-                    }
-                }
-                "DATA" => {
-                    session.is_data = true;
-                    Some(String::from("354 End data with <CR><LF>.<CR><LF>\r\n"))
-                }
-                "QUIT" => {
-                    session.quit = true;
-                    Some(String::from("221 Bye\r\n"))
-                },
-                _ => {
+        return match command.to_uppercase().as_str() {
+            "STARTTLS" => {
+                if self.config.is_some() {
+                    session.use_tls = true;
+                    None
+                } else {
                     Some(format!("500 Unknown command: {}\r\n", command))
                 }
+            },
+            "EHLO" | "HELO" => {
+                if self.get_config().is_some() {
+                    Some(String::from("250 STARTTLS\r\n"))
+                } else {
+                    Some(String::from("250 Hello {}\r\n"))
+                }
+            }
+            "MAIL" => {
+                if let Some(sender) = line_iter.next() {
+                    let cleaned = sender
+                        .trim_start_matches("FROM:")
+                        .trim_start_matches("from:")
+                        .trim_matches(&['<', '>', '\r', '\n'][..])
+                        .to_string();
+
+                    session.from = cleaned;
+                    Some(String::from("250 Ok\r\n"))
+                } else {
+                    Some(String::from("501 Syntax error\r\n"))
+                }
+            }
+            "RCPT" => {
+                if let Some(receiver) = line_iter.next() {
+                    let cleaned = receiver
+                        .trim_start_matches("TO:")
+                        .trim_start_matches("to:")
+                        .trim_matches(&['<', '>', '\r', '\n'][..])
+                        .to_string();
+
+                    session.to.push(cleaned);
+                    Some(String::from("250 Ok\r\n"))
+                } else {
+                    Some(String::from("501 Syntax error\r\n"))
+                }
+            }
+            "DATA" => {
+                session.is_data = true;
+                Some(String::from("354 End data with <CR><LF>.<CR><LF>\r\n"))
+            }
+            "QUIT" => {
+                session.quit = true;
+                Some(String::from("221 Bye\r\n"))
+            },
+            _ => {
+                Some(format!("500 Unknown command: {}\r\n", command))
             }
         }
     }
