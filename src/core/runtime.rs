@@ -90,7 +90,6 @@ impl Server {
         println!("Server listening on port {}", port.port_num);
 
         for stream_result in listener.incoming() {
-            println!("accepted connection");
             let stream = match stream_result {
                 Ok(stream) => stream,
                 Err(e) => {
@@ -133,7 +132,6 @@ impl Server {
                 }
             });
 
-            println!("task pushed.");
             task_queue.push(task);
         }
     }

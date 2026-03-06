@@ -3,7 +3,6 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::thread;
 use std::thread::{JoinHandle};
-use std::time::Instant;
 use crate::core::runtime::Task;
 
 pub struct Worker {
@@ -14,9 +13,8 @@ impl Worker {
         let handle = thread::spawn(move || {
             loop {
                 let task = task_queue.pop();
-                println!("Task queue popped: {:?}", thread::current().id());
                 match catch_unwind(AssertUnwindSafe(task)) {
-                    Ok(Ok(_)) => {println!("Task done: {:?}", thread::current().id());},
+                    Ok(Ok(_)) => {},
                     Ok(Err(_e)) => {
                         /* TODO LOG ERROR */
                         continue;
@@ -47,38 +45,15 @@ impl TaskQueue {
     }
 
     pub fn push(&self, task: Task) {
-        println!("try lock to push task");
         self.queue.lock().unwrap().push_back(task);
-        println!("got lock and pushed task.");
         self.status.notify_one();
-        println!("notified worker");
     }
 
-    /*pub fn pop(&self) -> Task {
-        println!("try lock to pop task - out while");
-        let mut queue = self.queue.lock().unwrap();
-        while queue.is_empty() {
-            println!("woke up, but queue is empty");
-            queue = self.status.wait(queue).unwrap();
-            println!("woke up");
-        }
-        println!("queue is not empty. returning Task.");
-        queue.pop_front().unwrap()
-    }*/
     pub fn pop(&self) -> Task {
-        println!("try lock to pop task - out while");
-
         let mut queue = self.queue.lock().unwrap();
-
         while queue.is_empty() {
-            let start = Instant::now();
-
             queue = self.status.wait(queue).unwrap();
-
-            println!("wake latency: {:?}", start.elapsed());
         }
-
-        println!("queue is not empty. returning Task.");
         queue.pop_front().unwrap()
     }
 }

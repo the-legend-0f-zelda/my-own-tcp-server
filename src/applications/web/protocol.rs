@@ -38,7 +38,6 @@ pub struct Http {
 impl Protocol for Http {
     fn handle_connection(&self, stream: TcpStream, peer:SocketAddr) -> Result<(), Box<dyn Error>>
     {
-        println!("before tls");
         let mut stream_to_handle:Box<dyn ReadWrite> = match self.get_config() {
             Some(config) => {
                 let conn = ServerConnection::new(config.clone())?;
@@ -47,7 +46,6 @@ impl Protocol for Http {
             },
             None => Box::new(stream)
         };
-        println!("after tls");
 
         let mut buf_reader = BufReader::new(&mut *stream_to_handle);
         let mut query_params:Value = Value::Object(serde_json::Map::new());

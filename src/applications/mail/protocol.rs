@@ -50,7 +50,6 @@ impl Protocol for Smtp {
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
                 Some(response) => {
-                    println!("response: {}", &response);
                     tls_stream.write_all(response.as_bytes())?;
                     tls_stream.flush()?;
                     if session.quit == true { return (self.post_handle)(session); }
