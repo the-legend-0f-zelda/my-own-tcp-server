@@ -88,12 +88,14 @@ impl HttpResponse {
 
     pub fn write_file(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let mut file = File::open(path)?;
+        let content_type = Self::get_content_type(path.rsplit('.').next().unwrap());
+
         let file_size = file.metadata()?.len();
         let mut buffer = Vec::new();
-
         file.read_to_end(&mut buffer)?;
 
         self.write_status()?;
+        self.set_header("content-type", content_type);
         self.set_header("content-length", file_size.to_string().as_str());
         self.write_header()?;
         self.stream.write_all(&buffer)?;
@@ -101,4 +103,19 @@ impl HttpResponse {
         Ok(())
     }
 
+    fn get_content_type(extension:&str) -> &str {
+        match extension.to_lowercase().as_str() {
+            "html" => "text/html",
+            "js" => "application/javascript",
+            "css" => "text/css",
+            "png" => "image/png",
+            "jpg" => "image/jpeg",
+            "svg" => "image/svg+xml",
+            "gif" => "image/gif",
+            "ico" => "image/x-icon",
+            "ttf" => "font/ttf",
+            "otf" => "font/otf",
+            _ => "text/plain"
+        }
+    }
 }

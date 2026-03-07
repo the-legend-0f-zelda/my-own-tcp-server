@@ -21,7 +21,9 @@ pub struct Port {
     protocol: Arc<RwLock<dyn Protocol>>,
 }
 
-pub type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
+
+pub(crate) type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
+
 
 impl Port {
     pub fn new(port_num: u16, protocol: Arc<RwLock<dyn Protocol>>) -> Self {
@@ -91,6 +93,7 @@ impl Server {
                 Ok(peer) => peer,
                 Err(_e) => continue // TODO LOG ERROR
             };
+
             let protocol_lock = Arc::clone(&protocol);
 
             let task:Task = Box::new(move || {
@@ -114,4 +117,5 @@ impl Server {
             self.thread_pool.queue.push(task);
         }
     }
+
 }

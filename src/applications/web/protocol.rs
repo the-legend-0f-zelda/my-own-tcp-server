@@ -202,6 +202,7 @@ impl Http {
             "application/json" => {
                 Ok(Some(serde_json::from_str(body_str.as_str())?))
             },
+            
             _ => Err(Box::new(io::Error::new(ErrorKind::Other, "unknown content-type")))
         }
     }
