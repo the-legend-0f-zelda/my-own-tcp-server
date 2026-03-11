@@ -43,7 +43,10 @@ impl TaskQueue {
 
     fn push(&self, task: AsyncTask) {
         let mut empty = self.empty.lock().unwrap();
-        self.queue.push(task).unwrap();
+        match self.queue.push(task) {
+            Ok(_) => {}
+            Err(_) => {}
+        }
         *empty = false;
     }
 
@@ -63,9 +66,10 @@ struct Worker {
 impl Worker {
     fn spawn(mut self) {
         self.task_queue = Arc::new(TaskQueue::new());
-        thread::spawn(async || {
+        let queue = Arc::clone(&self.task_queue);
+        thread::spawn(async move || {
             loop {
-                let task = self.task_queue.pop().unwrap();
+                let task = queue.pop().unwrap();
                 task.await;
             }
         });
@@ -92,8 +96,6 @@ impl ThreadPool {
             .unwrap()
             .task_queue
             .push(task);
-
-
     }
 }
 
