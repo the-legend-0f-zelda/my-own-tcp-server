@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::{io, thread};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll, Wake, Waker};
 use std::thread::JoinHandle;
 use crossbeam_queue::ArrayQueue;
 use mio::{Events, Interest, Registry, Token};
@@ -35,17 +35,23 @@ impl AsyncTcpStream {
 
     pub fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
         let mut chunk = [0u8; 4096];
+        println!("start poll load buf");
         match self.stream.read(&mut chunk) {
             Ok(n) => {
                 self.read_buf.extend_from_slice(&chunk[..n]);
+                println!("load buf ok.");
                 Poll::Ready(Ok(n))
             },
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 self.event_manager
                     .delegate( self.token.clone(), cx.waker().clone() );
+                println!("load buf error: would block");
                 Poll::Pending
             },
-            Err(e) => Poll::Ready(Err(e)),
+            Err(e) => {
+                println!("load buf error: {}", e);
+                Poll::Ready(Err(e))
+            },
         }
     }
     pub fn load_buf(&mut self) -> impl Future<Output = io::Result<usize>> + '_ {
@@ -53,19 +59,24 @@ impl AsyncTcpStream {
     }
 
     pub async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        println!("start reading");
         if self.read_buf.len() >= buf.len() {
             buf.copy_from_slice(&self.read_buf[..buf.len()]);
             self.read_buf.drain(..buf.len());
+            println!("read done.");
             return Ok(buf.len());
         }
 
         while self.read_buf.len() < buf.len() {
+            println!("start load buf");
             if self.load_buf().await? == 0 {break;}
         }
 
         let available = std::cmp::min(self.read_buf.len(), buf.len());
         buf.copy_from_slice(&self.read_buf[..available]);
         self.read_buf.drain(..available);
+
+        println!("read done.");
         Ok(available)
     }
 
@@ -104,9 +115,15 @@ impl EventManager {
 
             loop {
                 let mut poll = manager.poll.lock().unwrap();
-                let mut waker_vtable = manager.waker_vtable.lock().unwrap();
                 poll.poll(&mut event_queue, None).unwrap(); // block
+                drop(poll);
 
+                let mut waker_vtable = manager.waker_vtable.lock().unwrap();
+                // !!! 이벤트 알림와서 웨이커 깨우는동안 작업스레드 Pending 발생시 토큰:웨이커 저장 및 Pending 반환 지연
+                // TODO 현재 이벤트루프 스레드에서 vtable에 락걸고 들어온 이벤트 iterate
+                // => 이벤트 탐색하는동안 다른 워커스레드에서 delegate() 불가
+                // => 요청수&i/o 많아지면 병목 가능성
+                // => DashMap으로 변경?
                 for event in event_queue.deref().iter() {
                     match waker_vtable.remove(&event.token()) {
                         Some(waker) => {waker.wake()}
@@ -165,20 +182,58 @@ impl TaskQueue {
 }
 
 
+struct TaskWaker {
+    task: Mutex<Option<AsyncTask>>,
+    task_queue: Arc<TaskQueue>
+}
+impl Wake for TaskWaker {
+    fn wake(self: Arc<Self>) {
+        let task = self.task.lock().unwrap().take();
+        if let Some(task) = task {
+            self.task_queue.push(task);
+        }
+    }
+}
+impl TaskWaker {
+    fn new(task: Option<AsyncTask>, task_queue: Arc<TaskQueue>) -> Self {
+        let task_to_wake = Mutex::new(task);
+        Self {
+            task: task_to_wake,
+            task_queue
+        }
+    }
+
+    fn delegate(self: Arc<Self>, task: AsyncTask) {
+        *self.task.lock().unwrap() = Some(task);
+    }
+}
+
+
 struct Worker {
     task_queue: Arc<TaskQueue>,
 }
 impl Worker {
     fn spawn() -> Self {
         let task_queue = Arc::new(TaskQueue::new());
-
         let queue = Arc::clone(&task_queue);
-        // !!! 스레드 spawn에서 async-await 사용 불가, 수동으로 poll 필요
-        thread::spawn(async move || {
+
+        thread::spawn(move || {
             loop {
-                let task = queue.pop().unwrap();
+                let mut task:AsyncTask = queue.pop().unwrap();
+                let task_waker = Arc::new(TaskWaker::new(None, queue.clone()));
+                let waker = Waker::from(Arc::clone(&task_waker));
+                let mut context = Context::from_waker(&waker);
+
                 print!("found task.");
-                task.await;
+                match task.as_mut().poll(&mut context) {
+                    Poll::Pending => {
+                        task_waker.delegate(task);
+                        println!("pending.");
+                    },
+                    Poll::Ready(_) => {
+                        println!("task done.");
+                    }
+                }
             }
         });
 

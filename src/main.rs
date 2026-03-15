@@ -11,6 +11,7 @@ fn main() {
     impl AsyncProtocol for TestProtocol {
         fn handle_async_connection(&self, mut stream: AsyncTcpStream) -> impl Future<Output=()> + Send {
             async move {
+                println!("in handle_async_connection");
                 let mut buf = [0u8; 1024];
                 let _num_read =stream.read(&mut buf).await;
                 println!("async read result: {:?}", String::from_utf8(buf.to_vec()));
