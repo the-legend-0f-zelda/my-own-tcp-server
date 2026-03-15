@@ -81,9 +81,19 @@ impl AsyncTcpStream {
     }
 
     /*pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-    }
-    pub async fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
+
     }*/
+    pub async fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
+        loop {
+            if let Some(lf) = self.read_buf.iter().position(|&b| b == b'\n') {
+                let line = self.read_buf.drain(..=lf).collect::<Vec<u8>>();
+                buf.push_str(&String::from_utf8_lossy(&line));
+                return Ok(line.len())
+            }else {
+                if 0 == self.load_buf().await? {return Ok(0)}
+            }
+        }
+    }
     pub fn drain_read_buf(&mut self, n: usize) -> Vec<u8> {
         self.read_buf.drain(..n).collect()
     }
@@ -177,7 +187,9 @@ impl TaskQueue {
             empty = self.notifier.wait(empty).unwrap();
         }
         println!("pop");
-        self.queue.pop()
+        let task = self.queue.pop();
+        *empty = self.queue.is_empty();
+        task
     }
 }
 
@@ -219,7 +231,10 @@ impl Worker {
 
         thread::spawn(move || {
             loop {
-                let mut task:AsyncTask = queue.pop().unwrap();
+                let mut task:AsyncTask = match queue.pop() {
+                    Some(task) => task,
+                    None => {continue;}
+                };
                 let task_waker = Arc::new(TaskWaker::new(None, queue.clone()));
                 let waker = Waker::from(Arc::clone(&task_waker));
                 let mut context = Context::from_waker(&waker);
@@ -272,6 +287,7 @@ pub struct Server<P: AsyncProtocol> {
     event_manager: Arc<EventManager>,
     thread_pool: ThreadPool,
     max_threads: usize,
+    next_token: AtomicUsize
 }
 pub(crate) type AsyncTask = Pin<Box<dyn Future<Output=()> + Send>>;
 impl<P: AsyncProtocol> Server<P> {
@@ -282,11 +298,16 @@ impl<P: AsyncProtocol> Server<P> {
             event_manager: Arc::new(EventManager::new()),
             thread_pool: ThreadPool::new(),
             max_threads: 1,
+            next_token: AtomicUsize::new(0)
         }
     }
 
     pub fn set_port(&mut self, port: u16, protocol: P) {
         self.port_mappings.insert(port, Arc::new(protocol));
+    }
+
+    fn next_token(&self) -> Token {
+        Token(self.next_token.fetch_add(1, Ordering::Relaxed))
     }
 
     pub fn listen_port(&self, port: u16, event_registry: Registry) {
@@ -298,10 +319,11 @@ impl<P: AsyncProtocol> Server<P> {
                 Ok((stream, peer)) => (stream, peer),
                 Err(_e) => continue,
             };
+            let token = self.next_token();
 
             event_registry.register(
                 &mut stream,
-                Token(1),
+                token,
                 Interest::READABLE,
             ).unwrap();
 
@@ -313,7 +335,7 @@ impl<P: AsyncProtocol> Server<P> {
             let event_manager = Arc::clone(&self.event_manager);
 
             let task:AsyncTask = Box::pin(async move {
-                let async_stream = AsyncTcpStream::new(stream, Token(1), event_manager);
+                let async_stream = AsyncTcpStream::new(stream, token, event_manager);
                 protocol.handle_async_connection(async_stream).await;
             });
 
