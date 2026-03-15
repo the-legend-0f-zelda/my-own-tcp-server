@@ -10,11 +10,11 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::thread::JoinHandle;
 use crossbeam_queue::ArrayQueue;
 use mio::{Events, Interest, Registry, Token};
-use mio::net::{TcpListener, TcpStream};
+use mio::net::TcpStream;
 
 
 pub trait AsyncProtocol: Send + Sync + 'static {
-    fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = ()> + Send;
+    fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
 }
 
 
@@ -97,6 +97,12 @@ impl AsyncTcpStream {
         match self.stream.write(buf) {
             Ok(n) => Poll::Ready(Ok(n)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.registry.reregister(
+                    &mut self.stream,
+                    self.token,
+                    Interest::READABLE | Interest::WRITABLE,
+                ).unwrap();
+
                 self.event_manager
                     .delegate(self.token.clone(), cx.waker().clone());
                 Poll::Pending
@@ -354,7 +360,7 @@ impl<P: AsyncProtocol> Server<P> {
                 let async_stream = AsyncTcpStream::new(
                     stream, token, event_manager, registry
                 );
-                protocol.handle_async_connection(async_stream).await;
+                protocol.handle_async_connection(async_stream).await.unwrap();
             });
 
             self.thread_pool.round_robin(task);
