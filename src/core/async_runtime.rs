@@ -17,14 +17,17 @@ use mio::{Events, Interest, Registry, Token};
 use mio::net::TcpStream;
 use rustls::{ServerConfig, ServerConnection};
 
+
 pub trait AsyncProtocol: Send + Sync + 'static {
     fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
 }
+
 
 pub struct AsyncFile {
     file: Option<File>,
     pub len: usize,
     read_buf: Arc<Mutex<Vec<u8>>>,
+    written: Arc<AtomicBool>,
     waker: Arc<Mutex<Option<Waker>>>,
 }
 static FIO_POOL:OnceLock<ThreadPool> = OnceLock::new();
@@ -39,6 +42,7 @@ impl AsyncFile {
             file: Some(file),
             len,
             read_buf: Arc::new(Mutex::new(Vec::new())),
+            written: Arc::new(AtomicBool::new(false)),
             waker: Arc::new(Mutex::new(None)),
         }
     }
@@ -81,7 +85,45 @@ impl AsyncFile {
         self.read(buf).await
     }
 
+    fn poll_write(&mut self, cx:&mut Context) -> Poll<io::Result<bool>> {
+        if self.written.load(Ordering::SeqCst) {
+            Poll::Ready(Ok(true))
+        }else {
+            let mut waker = self.waker.lock().unwrap();
+            *waker = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+    fn write(&mut self) -> impl Future<Output = io::Result<bool>> + '_ {
+        std::future::poll_fn(|cx:&mut Context| self.poll_write(cx))
+    }
+
+    pub async fn write_all(&mut self, buf:Vec<u8>) -> io::Result<bool> {
+        let mut file = match self.file.take() {
+            Some(f) => f,
+            None => return Err(io::ErrorKind::Other.into()),
+        };
+
+        let written = Arc::clone(&self.written);
+        let waker = Arc::clone(&self.waker);
+
+        let task:AsyncTask = Box::pin(async move {
+            file.write_all(buf.as_slice())?;
+
+            written.store(true, Ordering::SeqCst);
+            if let Some(w) = waker.lock().unwrap().take() {
+                w.wake();
+            }
+            Ok(())
+        });
+        FIO_POOL.get().unwrap().round_robin(task);
+
+        self.write().await
+    }
+
+
 }
+
 
 pub struct AsyncTcpStream {
     stream: TcpStream,
