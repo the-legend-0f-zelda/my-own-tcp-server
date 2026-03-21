@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::{io, thread};
+use std::fs::{File, Metadata};
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::JoinHandle;
 use crossbeam_queue::ArrayQueue;
@@ -17,6 +18,61 @@ pub trait AsyncProtocol: Send + Sync + 'static {
     fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
 }
 
+pub struct AsyncFile {
+    file: Option<File>,
+    pub len: usize,
+    read_buf: Arc<Mutex<Vec<u8>>>,
+    waker: Arc<Mutex<Option<Waker>>>,
+}
+static FIO_POOL:OnceLock<ThreadPool> = OnceLock::new();
+impl Drop for AsyncFile {
+    fn drop(&mut self) {
+    }
+}
+impl AsyncFile {
+    pub fn from(file: File) -> Self {
+        let len = file.metadata().unwrap().len();
+        Self {
+            file: Some(file),
+            len: len as usize,
+            read_buf: Arc::new(Mutex::new(Vec::new())),
+            waker: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn poll_read(&mut self, cx:&mut Context, buf:&mut Vec<u8>) -> Poll<io::Result<usize>> {
+        let mut inner_buf = self.read_buf.lock().unwrap();
+        if inner_buf.len() < self.len {
+            let mut waker = self.waker.lock().unwrap();
+            *waker = Some(cx.waker().clone());
+            Poll::Pending
+        } else {
+            *buf = std::mem::take(&mut inner_buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+    }
+    fn read<'a>(&'a mut self, buf:&'a mut Vec<u8>) -> impl Future<Output = io::Result<usize>> + 'a {
+        std::future::poll_fn(move |cx| self.poll_read(cx, buf))
+    }
+
+    pub async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        let mut file = self.file.take().unwrap();
+        let inner_buf = Arc::clone(&self.read_buf);
+        let waker = Arc::clone(&self.waker);
+
+        let task: AsyncTask = Box::pin(async move {
+            let mut local_buf = Vec::new();
+            file.read_to_end(&mut local_buf).unwrap();
+            *inner_buf.lock().unwrap() = local_buf;
+            if let Some(w) = waker.lock().unwrap().take() {
+                w.wake();
+            }
+        });
+        FIO_POOL.get().unwrap().round_robin(task);
+
+        self.read(buf).await
+    }
+}
 
 pub struct AsyncTcpStream {
     stream: TcpStream,
@@ -49,7 +105,7 @@ impl AsyncTcpStream {
             },
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 self.event_manager
-                    .delegate( self.token.clone(), cx.waker().clone() );
+                    .delegate( self.token, cx.waker().clone() );
                 Poll::Pending
             },
             Err(e) => Poll::Ready(Err(e)),
@@ -76,10 +132,6 @@ impl AsyncTcpStream {
 
         Ok(available)
     }
-
-    /*pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-
-    }*/
 
     pub async fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
         loop {
@@ -218,13 +270,15 @@ impl TaskQueue {
 
 struct TaskWaker {
     task: Mutex<Option<AsyncTask>>,
-    task_queue: Arc<TaskQueue>
+    task_queue: Arc<TaskQueue>,
+    woken: AtomicBool
 }
 impl Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
-        let task = self.task.lock().unwrap().take();
-        if let Some(task) = task {
+        if let Some(task) = self.task.lock().unwrap().take() {
             self.task_queue.push(task);
+        }else {
+            self.woken.store(true, Ordering::SeqCst);
         }
     }
 }
@@ -233,12 +287,18 @@ impl TaskWaker {
         let task_to_wake = Mutex::new(task);
         Self {
             task: task_to_wake,
-            task_queue
+            task_queue,
+            woken: AtomicBool::new(false),
         }
     }
 
     fn delegate(self: Arc<Self>, task: AsyncTask) {
-        *self.task.lock().unwrap() = Some(task);
+        let mut guard = self.task.lock().unwrap();
+        if self.woken.load(Ordering::SeqCst) {
+            self.task_queue.push(task);
+        }else {
+            *guard = Some(task);
+        }
     }
 }
 
@@ -300,8 +360,9 @@ impl ThreadPool {
 pub struct Server<P: AsyncProtocol> {
     port_mappings:HashMap<u16, Arc<P>>,
     event_manager: Arc<EventManager>,
-    thread_pool: ThreadPool,
-    max_threads: usize,
+    nio_pool: ThreadPool,
+    max_nio_threads: usize,
+    max_fio_threads: usize,
     next_token: AtomicUsize
 }
 pub(crate) type AsyncTask = Pin<Box<dyn Future<Output=()> + Send>>;
@@ -311,8 +372,9 @@ impl<P: AsyncProtocol> Server<P> {
         Self {
             port_mappings: HashMap::new(),
             event_manager: Arc::new(EventManager::new()),
-            thread_pool: ThreadPool::new(),
-            max_threads: 1,
+            nio_pool: ThreadPool::new(),
+            max_nio_threads: 1,
+            max_fio_threads: 1,
             next_token: AtomicUsize::new(0)
         }
     }
@@ -363,25 +425,35 @@ impl<P: AsyncProtocol> Server<P> {
                 protocol.handle_async_connection(async_stream).await.unwrap();
             });
 
-            self.thread_pool.round_robin(task);
+            self.nio_pool.round_robin(task);
         }
 
     }
 
-    pub fn set_max_threads(&mut self, max_threads: usize) {
-        self.max_threads = max_threads;
+    pub fn set_max_nio_threads(&mut self, max_nio_threads: usize) {
+        self.max_nio_threads = max_nio_threads;
+    }
+
+    pub fn set_max_fio_threads(&mut self, max_fio_threads: usize) {
+        self.max_fio_threads = max_fio_threads;
     }
 
     pub fn start(mut self) {
         let mut join_handles:Vec<JoinHandle<()>> = Vec::new();
 
-        self.thread_pool.spawn_workers(self.max_threads);
+        self.nio_pool.spawn_workers(self.max_nio_threads);
+        FIO_POOL.get_or_init(|| {
+            let mut fio_pool = ThreadPool::new();
+            fio_pool.spawn_workers(self.max_fio_threads);
+            fio_pool
+        });
+
         let server = Arc::new(self);
         let event_manager = Arc::clone(&server.event_manager);
 
         for port in &server.port_mappings {
             let server_clone = Arc::clone(&server);
-            let port_clone = port.0.clone();
+            let port_clone = *port.0;
             let registry_clone = event_manager.get_registry_clone();
 
             let port_handle = thread::spawn(move || {

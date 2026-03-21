@@ -37,11 +37,15 @@ fn main() {
         res.write("<h1>helllllloooodododododofoff</h1>").await
     }
 
+    async fn handle_file(_req:HttpRequest, mut res:HttpResponse) -> io::Result<usize> {
+        res.write_file("./examples/hello.html").await
+    }
+
     let mut prot = Http::new();
     prot.handle(GET, "/hello", handle_hello);
-
+    prot.handle(GET, "/", handle_file);
+    
     let mut server:Server<Http> = Server::new();
-    server.set_max_threads(1);
     server.set_port(8080, prot);
     server.start();
 }

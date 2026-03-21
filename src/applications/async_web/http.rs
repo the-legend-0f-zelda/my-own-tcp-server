@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::pin::Pin;
-use crate::core::async_runtime::AsyncTcpStream;
+use crate::core::async_runtime::{AsyncFile, AsyncTcpStream};
 
 #[derive(Clone, Debug)]
 #[derive(Eq, Hash, PartialEq)]
@@ -94,16 +94,15 @@ impl HttpResponse {
     }
 
     pub async fn write_file(&mut self, path: &str) -> io::Result<usize> {
-        let mut file = File::open(path)?;
+        let mut file = AsyncFile::from( File::open(path)? );
         let content_type = Self::get_content_type(path.rsplit('.').next().unwrap());
 
-        let file_size = file.metadata()?.len();
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
+        file.read_to_end(&mut buffer).await?;
 
         let mut total = self.write_status().await?;
         self.set_header("content-type", content_type);
-        self.set_header("content-length", file_size.to_string().as_str());
+        self.set_header("content-length", file.len.to_string().as_str());
         total += self.write_header().await?;
         total += self.stream.write_all(&buffer).await?;
 

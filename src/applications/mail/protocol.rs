@@ -47,14 +47,11 @@ impl Protocol for Smtp {
             line_buf.clear();
             if tls_stream.read_line(&mut line_buf)? == 0 { return (self.post_handle)(session); }
 
-            match self.build_response( take(&mut line_buf).as_str(), &mut session )
+            if let Some(response) = self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
-                Some(response) => {
-                    tls_stream.write_all(response.as_bytes())?;
-                    tls_stream.flush()?;
-                    if session.quit == true { return (self.post_handle)(session); }
-                },
-                None => {}
+                tls_stream.write_all(response.as_bytes())?;
+                tls_stream.flush()?;
+                if session.quit { return (self.post_handle)(session); }
             }
         }
     }
