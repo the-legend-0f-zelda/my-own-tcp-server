@@ -111,20 +111,24 @@ impl AsyncTcpStream {
         self.stream.peer_addr()
     }
 
+    fn read_tls_chunk(&mut self, chunk: &mut [u8]) -> io::Result<usize> {
+        let tls = self.tls.as_mut().unwrap();
+        match tls.reader().read(chunk) {
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                tls.read_tls(&mut self.stream)?; // WouldBlock 그대로 반환 => 이후 비동기처리 ㅇㅇ
+                tls.process_new_packets()
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+                tls.reader().read(chunk)
+            }
+            other => other
+        }
+    }
+
     fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
         let mut chunk = [0u8; 4096];
 
         let read_result = match self.tls {
-            Some(ref mut tls) => {
-                match tls.read_tls(&mut self.stream) {
-                    Ok(_) => {
-                        tls.process_new_packets()
-                            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-                        tls.reader().read(&mut chunk)
-                    },
-                    Err(e) => Err(e)
-                }
-            }
+            Some(ref mut tls) => self.read_tls_chunk(&mut chunk),
             None => self.stream.read(&mut chunk),
         };
 
@@ -232,7 +236,7 @@ impl AsyncTcpStream {
                     let n = self.load_buf().await?;
                     if n < 4096 { break; }
                 }
-                let _n = conn.read_tls(&mut &self.read_buf[..])?;
+                conn.read_tls(&mut &self.read_buf[..])?;
                 self.read_buf.clear();
                 conn.process_new_packets()
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
