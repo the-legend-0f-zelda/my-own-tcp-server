@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::fs::File;
 use std::io;
 use std::io::Read;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use crate::core::async_runtime::{AsyncFile, AsyncTcpStream};
 
@@ -20,15 +21,16 @@ pub type Action = Box<HttpHandler>;
 pub struct HttpRequest {
     pub method: Method,
     pub endpoint: String,
+    pub peer: SocketAddr,
     pub header: HashMap<String, String>,
     pub query_params: Value,
     pub body_params: Value,
 }
 
 impl HttpRequest {
-    pub fn new(method: Method, endpoint:String, header:HashMap<String, String>,
+    pub fn new(method: Method, endpoint:String, peer:SocketAddr, header:HashMap<String, String>,
                query_params: Value, body_params: Value) -> Self
-    { Self { method, endpoint, header, query_params, body_params} }
+    { Self { method, endpoint, peer, header, query_params, body_params} }
 }
 
 

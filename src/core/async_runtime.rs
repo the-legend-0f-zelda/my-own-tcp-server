@@ -329,7 +329,6 @@ impl EventManager {
                 // => DashMap으로 변경?
                 for event in event_queue.deref().iter() {
                     let has_waker = waker_vtable.contains_key(&event.token());
-                    println!("event token: {:?}, waker exists: {}", event.token(), has_waker);
                     if let Some(waker) = waker_vtable.remove(&event.token()) {
                         waker.wake();
                     }
@@ -510,6 +509,14 @@ impl Server {
         self.port_mappings.insert(port, Arc::new(protocol));
     }
 
+    pub fn set_max_nio_threads(&mut self, max_nio_threads: usize) {
+        self.max_nio_threads = max_nio_threads;
+    }
+
+    pub fn set_max_fio_threads(&mut self, max_fio_threads: usize) {
+        self.max_fio_threads = max_fio_threads;
+    }
+
     pub fn set_config(&mut self, config: Arc<ServerConfig>) {
         self.config = Some(config);
     }
@@ -537,7 +544,6 @@ impl Server {
             };
             std_stream.set_read_timeout(self.read_timeout).unwrap();
             let mut stream = TcpStream::from_std(std_stream);
-            println!("accepted connection");
 
             let token = self.next_token();
             let registry = event_registry.try_clone().unwrap();
@@ -566,14 +572,6 @@ impl Server {
             self.nio_pool.round_robin(task);
         }
 
-    }
-
-    pub fn set_max_nio_threads(&mut self, max_nio_threads: usize) {
-        self.max_nio_threads = max_nio_threads;
-    }
-
-    pub fn set_max_fio_threads(&mut self, max_fio_threads: usize) {
-        self.max_fio_threads = max_fio_threads;
     }
 
     pub fn start(mut self) {

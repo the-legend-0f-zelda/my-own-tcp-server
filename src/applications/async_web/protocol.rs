@@ -79,7 +79,8 @@ impl AsyncProtocol for Http {
 
 
         let request = HttpRequest::new (
-            request_line.0, request_line.1, header,
+            request_line.0, request_line.1,
+            stream.peer_addr().unwrap(), header,
             query_params, body_params
         );
         let mut response = HttpResponse::new(
@@ -100,14 +101,6 @@ impl AsyncProtocol for Http {
         }
     })}
 
-/*    fn set_config(&mut self, config: &Option<Arc<ServerConfig>>) {
-        self.config = match *config {
-            Some(ref config) => Some(config.clone()),
-            None => None
-        };
-    }
-
-    fn get_config(&self) -> &Option<Arc<ServerConfig>> { &self.config }*/
 }
 
 impl Http {

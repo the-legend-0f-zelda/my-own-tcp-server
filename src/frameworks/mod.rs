@@ -1,3 +1,1 @@
-pub mod mvc{
-    pub mod http_server;
-}
+pub mod web;
