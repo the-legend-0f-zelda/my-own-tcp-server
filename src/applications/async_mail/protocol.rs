@@ -124,6 +124,10 @@ impl Smtp {
         }
     }
 
+    pub fn set_config(&mut self, config:Arc<ServerConfig>) {
+        self.config = Some(config);
+    }
+
     /*pub fn build_response(&self, incoming:&str, session:&mut SmtpSession) -> Option<String> {
         if session.is_data {
             return match incoming.trim_end_matches(&['\r','\n'][..]) {
