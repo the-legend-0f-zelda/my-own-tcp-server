@@ -19,10 +19,10 @@ use rustls::{ServerConfig, ServerConnection};
 
 
 pub trait AsyncProtocol: Send + Sync + 'static {
-    //fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
     fn handle_async_connection(&self, stream: AsyncTcpStream) -> AsyncConnectionFuture<'_>;
 }
 pub type AsyncConnectionFuture<'a> = Pin<Box<dyn Future<Output = io::Result<usize>> + Send + 'a>>;
+
 
 pub struct AsyncFile {
     file: Option<File>,
