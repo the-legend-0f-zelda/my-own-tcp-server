@@ -71,6 +71,12 @@ fn main() {
             .with_single_cert(certs, key).unwrap()
     );
 
+    prot.handle(GET, "/img/*", |req, mut res| async move {
+        res.write_file(
+            format!("./examples{}", req.endpoint).as_str()
+        ).await
+    });
+
     prot.set_config(config);
     prot.use_tls = true;
 

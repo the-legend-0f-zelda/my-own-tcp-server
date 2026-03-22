@@ -225,11 +225,14 @@ impl AsyncTcpStream {
         let write_result = match self.tls {
             Some(ref mut tls) => {
                 match tls.writer().write(buf) {
-                    Ok(_) => tls.write_tls(&mut self.stream),
+                    Ok(n) => {
+                        tls.write_tls(&mut self.stream)?;
+                        Ok(n)
+                    }
                     Err(e) => Err(e)
                 }
             },
-            None =>self.stream.write(buf)
+            None => self.stream.write(buf)
         };
 
         match write_result {

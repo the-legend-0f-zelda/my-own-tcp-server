@@ -102,7 +102,7 @@ impl HttpResponse {
 
         let mut total = self.write_status().await?;
         self.set_header("content-type", content_type);
-        self.set_header("content-length", file.len.to_string().as_str());
+        self.set_header("content-length", buffer.len().to_string().as_str());
         total += self.write_header().await?;
         total += self.stream.write_all(&buffer).await?;
 

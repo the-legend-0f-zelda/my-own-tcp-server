@@ -230,7 +230,6 @@ impl Http {
 
 }
 
-
 fn decode_query(qs: &str, params:&mut Value) {
     for (k, v) in form_urlencoded::parse(qs.as_bytes()) {
         if let Some(map) =params.as_object_mut() {
