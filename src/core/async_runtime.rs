@@ -278,9 +278,11 @@ impl AsyncTcpStream {
                 self.write_all(&buf).await?;
             }
             if conn.wants_read() {
-                loop {
-                    let n = self.load_buf().await?;
-                    if n < 4096 { break; }
+                if self.load_buf().await? == 0 {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "peer closed during TLS handshake"
+                    ));
                 }
                 conn.read_tls(&mut &self.read_buf[..])?;
                 self.read_buf.clear();
