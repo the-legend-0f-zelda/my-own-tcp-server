@@ -10,7 +10,7 @@ use crate::core::async_runtime::{AsyncFile, AsyncTcpStream};
 #[derive(Clone, Debug)]
 #[derive(Eq, Hash, PartialEq)]
 pub enum Method {
-    GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, CONNECT, TRACE
+    GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, CONNECT, TRACE, ANY
 }
 
 pub type AsyncResult<'a> = Pin<Box<dyn Future<Output=io::Result<usize>> + Send + 'a>>;

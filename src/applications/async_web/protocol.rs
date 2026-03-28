@@ -5,8 +5,9 @@ use std::sync::Arc;
 use rustls::ServerConfig;
 use serde_json::Value;
 use crate::core::async_runtime::AsyncConnectionFuture;
-use crate::applications::async_web::default::{BAD_REQUEST, NOT_FOUND};
+use crate::applications::async_web::default::{BAD_REQUEST, INTERNAL_SERVER_ERROR, NOT_FOUND};
 use crate::applications::async_web::http::{Action, HttpHandler, HttpRequest, HttpResponse, Method};
+use crate::applications::async_web::http::Method::ANY;
 use crate::core::async_runtime::{AsyncProtocol, AsyncTcpStream};
 
 pub struct Handler {
@@ -26,8 +27,13 @@ impl Handler {
 }
 
 
+pub enum Phase { PreHandle, PostHandle }
+
+
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
+    pre_handlers: HashMap<String, Handler>,
+    post_handlers: HashMap<String, Handler>,
     config: Option<Arc<ServerConfig>>,
     pub use_tls: bool,
 }
@@ -77,9 +83,11 @@ impl AsyncProtocol for Http {
             _ => Value::Null
         };
 
+        let method = request_line.0;
+        let endpoint= request_line.1;
 
         let request = HttpRequest::new (
-            request_line.0, request_line.1,
+            method.clone(), endpoint.clone(),
             stream.peer_addr().unwrap(), header,
             query_params, body_params
         );
@@ -87,15 +95,20 @@ impl AsyncProtocol for Http {
             stream, 200, HashMap::new()
         );
 
-        match self.handlers.get(&(request.method.clone(), request.endpoint.clone())) {
+        self.handle_aop(Phase::PreHandle, endpoint.clone().as_str(), &request, &mut response).await;
+
+        let result = match self.handlers.get(&(method.clone(), endpoint.clone())) {
             Some(handler) => handler.execute(&request, &mut response).await,
             None => {
-                match self.search_wildcard(&request.method, request.endpoint.as_str()) {
+                match self.search_wildcard(&method, endpoint.as_str()) {
                     Some(wildcard_handler) => wildcard_handler.execute(&request, &mut response).await,
                     None => response.write_bytes(NOT_FOUND).await
                 }
             }
-        }
+        };
+
+        self.handle_aop(Phase::PostHandle, endpoint.as_str(), &request, &mut response).await;
+        result
     })}
 
 }
@@ -104,6 +117,8 @@ impl Http {
     pub fn new() -> Self {
         Self{
             handlers: HashMap::new(),
+            pre_handlers: HashMap::new(),
+            post_handlers: HashMap::new(),
             config: None,
             use_tls: false,
         }
@@ -209,14 +224,60 @@ impl Http {
         None
     }
 
-    pub fn handle(&mut self, method: Method, endpoint:&str, action: Action)
-    {
+    async fn handle_aop(&self, phase:Phase, endpoint:&str, request:&HttpRequest, response: &mut HttpResponse) -> bool {
+        let endpoint_vec = endpoint.split('/').collect::<Vec<&str>>();
+        let mut search = String::new();
+
+        let handler_set = match phase {
+            Phase::PreHandle => &self.pre_handlers,
+            Phase::PostHandle => &self.post_handlers,
+        };
+
+        for i in 0..endpoint_vec.len() {
+            search += endpoint_vec.get(i).unwrap_or(&"");
+            println!("search aop for {}", &search);
+
+            let mut result:io::Result<usize> = Ok(0);
+
+            if let Some(pre) = handler_set.get(&search) {
+                result = pre.execute(request, response).await;
+            }else if let Some(pre) = handler_set.get( &(search.clone()+"/*") ) {
+                result = pre.execute(request, response).await;
+            }
+
+            match result {
+                Ok(0) => search += "/",
+                Ok(_n) => return false,
+                Err(_e) => {
+                    let _r =response.write_bytes(INTERNAL_SERVER_ERROR).await;
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    pub fn set_handler(&mut self, method: Method, endpoint:&str, action: Action) {
         self.handlers.insert(
             (method.clone(), endpoint.to_string().clone()),
             Handler::new(method, endpoint, action)
         );
     }
 
+    pub fn set_pre_handler(&mut self, pattern:&str, action: Action) {
+        self.pre_handlers.insert(
+            pattern.to_string().clone(),
+            Handler::new(ANY, pattern, action)
+        );
+    }
+
+    pub fn set_post_handler(&mut self, pattern:&str, action: Action) {
+        self.post_handlers.insert(
+            pattern.to_string().clone(),
+            Handler::new(ANY, pattern, action)
+        );
+    }
 }
 
 fn decode_query(qs: &str, params:&mut Value) {
