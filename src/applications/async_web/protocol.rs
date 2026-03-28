@@ -86,13 +86,17 @@ impl AsyncProtocol for Http {
         let method = request_line.0;
         let endpoint= request_line.1;
 
+        let accept_gzip = header.get("accept-encoding")
+            .map(|v| v.contains("gzip"))
+            .unwrap_or(false);
+
         let request = HttpRequest::new (
             method.clone(), endpoint.clone(),
             stream.peer_addr().unwrap(), header,
             query_params, body_params
         );
         let mut response = HttpResponse::new(
-            stream, 200, HashMap::new()
+            stream, 200, HashMap::new(), accept_gzip
         );
 
         if !self.handle_aop(Phase::PreHandle, endpoint.clone().as_str(), &request, &mut response).await {
@@ -235,8 +239,6 @@ impl Http {
 
         for i in 0..endpoint_vec.len() {
             search += endpoint_vec.get(i).unwrap_or(&"");
-            println!("search aop for {}", &search);
-
             let mut result:io::Result<usize> = Ok(0);
 
             if let Some(pre) = handler_set.get(&search) {

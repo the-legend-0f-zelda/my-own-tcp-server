@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use serde_json::Value;
 use std::fs::File;
 use std::io;
-use std::io::Read;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use crate::core::async_runtime::{AsyncFile, AsyncTcpStream};
 
 #[derive(Clone, Debug)]
@@ -12,6 +14,7 @@ use crate::core::async_runtime::{AsyncFile, AsyncTcpStream};
 pub enum Method {
     GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, CONNECT, TRACE, ANY
 }
+
 
 pub type AsyncResult<'a> = Pin<Box<dyn Future<Output=io::Result<usize>> + Send + 'a>>;
 pub type HttpHandler = dyn for<'a> Fn(&'a HttpRequest, &'a mut HttpResponse) -> AsyncResult<'a> + Send + Sync;
@@ -39,12 +42,13 @@ pub struct HttpResponse {
     stream:AsyncTcpStream,
     status:u16,
     header:HashMap<String, String>,
+    accept_gzip:bool,
 }
 
 impl HttpResponse {
 
-    pub fn new(stream:AsyncTcpStream, status:u16, header:HashMap<String, String>) -> Self {
-        Self { stream, status, header }
+    pub fn new(stream:AsyncTcpStream, status:u16, header:HashMap<String, String>, accept_gzip:bool) -> Self {
+        Self { stream, status, header, accept_gzip }
     }
 
     pub fn set_status(&mut self, status:u16) -> &mut Self {
@@ -103,6 +107,21 @@ impl HttpResponse {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).await?;
 
+        // gzip 압축 (file>1kb, text/? application/?)
+        println!("content type: {}", content_type);
+        println!("content length: {}", buffer.len());
+
+        if (content_type.starts_with("text/") || content_type.starts_with("application/"))
+            && buffer.len() > 1024
+            && self.accept_gzip
+        {
+            println!("!!COMPRESS!!");
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(buffer.as_slice())?;
+            buffer = encoder.finish()?;
+            self.set_header("content-encoding", "gzip");
+        }
+
         let mut total = self.write_status().await?;
         self.set_header("content-type", content_type);
         self.set_header("content-length", buffer.len().to_string().as_str());
@@ -127,4 +146,5 @@ impl HttpResponse {
             _ => "text/plain"
         }
     }
+
 }
