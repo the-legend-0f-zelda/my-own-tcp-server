@@ -12,7 +12,7 @@ use crate::core::async_runtime::{AsyncProtocol, AsyncTcpStream};
 pub struct Handler {
     pub method: Method,
     pub endpoint: String,
-    action: Box<HttpHandler>,
+    action: Action,
 }
 
 impl Handler {
@@ -20,7 +20,7 @@ impl Handler {
         Self { method, endpoint:String::from(endpoint), action }
     }
 
-    async fn execute(&self, request:HttpRequest, response:HttpResponse) -> io::Result<usize> {
+    async fn execute(&self, request:&HttpRequest, response:&mut HttpResponse) -> io::Result<usize> {
         (*self.action)(request, response).await
     }
 }
@@ -88,14 +88,11 @@ impl AsyncProtocol for Http {
         );
 
         match self.handlers.get(&(request.method.clone(), request.endpoint.clone())) {
-            Some(handler) => {
-                handler.execute(request, response).await
-            },
+            Some(handler) => handler.execute(&request, &mut response).await,
             None => {
-                match self.search_wildcard(&request.method, &request.endpoint.as_str())
-                {
-                    Some(wildcard_handler) => { wildcard_handler.execute(request, response).await },
-                    None => { response.write_bytes(NOT_FOUND).await }
+                match self.search_wildcard(&request.method, request.endpoint.as_str()) {
+                    Some(wildcard_handler) => wildcard_handler.execute(&request, &mut response).await,
+                    None => response.write_bytes(NOT_FOUND).await
                 }
             }
         }
@@ -199,14 +196,12 @@ impl Http {
             .split('/')
             .collect::<Vec<&str>>();
 
-        while endpoint_vec.len() > 0 {
+        while !endpoint_vec.is_empty() {
             let search = endpoint_vec.join("/") + "/*";
             endpoint_vec.remove(endpoint_vec.len() - 1);
 
             match self.handlers.get( &(method.clone(), search) ){
-                Some(handler) => {
-                    return Some(handler)
-                },
+                Some(handler) => return Some(handler),
                 None => { continue; }
             }
         }
@@ -214,17 +209,11 @@ impl Http {
         None
     }
 
-    pub fn handle<F, Fut>(&mut self, method: Method, endpoint:&str, action: F)
-    where
-        Fut: Future<Output = io::Result<usize>> + Send + 'static,
-        F: Fn(HttpRequest, HttpResponse) -> Fut + Send + Sync + 'static,
+    pub fn handle(&mut self, method: Method, endpoint:&str, action: Action)
     {
         self.handlers.insert(
             (method.clone(), endpoint.to_string().clone()),
-            Handler::new(
-                method, &endpoint,
-                Box::new(move |req, res| Box::pin(action(req, res)))
-            )
+            Handler::new(method, endpoint, action)
         );
     }
 

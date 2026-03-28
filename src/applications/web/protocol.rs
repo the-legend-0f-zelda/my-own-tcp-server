@@ -25,7 +25,8 @@ impl Handler {
     }
 
     pub fn execute(&self, request:HttpRequest, response:HttpResponse) -> Result<(), Box<dyn Error>> {
-        Ok((*self.action)(request, response)?)
+        (*self.action)(request, response)?;
+        Ok(())
     }
 }
 

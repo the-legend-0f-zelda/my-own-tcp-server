@@ -13,9 +13,10 @@ pub enum Method {
     GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, CONNECT, TRACE
 }
 
-pub type AsyncResult = Pin<Box<dyn Future<Output=io::Result<usize>> + Send>>;
-pub type HttpHandler = dyn Fn(HttpRequest, HttpResponse) -> AsyncResult + Send + Sync;
+pub type AsyncResult<'a> = Pin<Box<dyn Future<Output=io::Result<usize>> + Send + 'a>>;
+pub type HttpHandler = dyn for<'a> Fn(&'a HttpRequest, &'a mut HttpResponse) -> AsyncResult<'a> + Send + Sync;
 pub type Action = Box<HttpHandler>;
+
 
 #[derive(Debug)]
 pub struct HttpRequest {
