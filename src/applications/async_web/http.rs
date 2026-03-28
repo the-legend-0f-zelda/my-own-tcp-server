@@ -108,14 +108,10 @@ impl HttpResponse {
         file.read_to_end(&mut buffer).await?;
 
         // gzip 압축 (file>1kb, text/? application/?)
-        println!("content type: {}", content_type);
-        println!("content length: {}", buffer.len());
-
         if (content_type.starts_with("text/") || content_type.starts_with("application/"))
             && buffer.len() > 1024
             && self.accept_gzip
         {
-            println!("!!COMPRESS!!");
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(buffer.as_slice())?;
             buffer = encoder.finish()?;

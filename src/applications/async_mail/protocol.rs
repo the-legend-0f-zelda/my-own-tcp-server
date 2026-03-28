@@ -39,6 +39,7 @@ impl AsyncProtocol for Smtp {
                             session.content.push_str(
                                 line_buf.trim_end_matches( &['\r','\n'][..] )
                             );
+                            session.content.push('\n');
                         }
                     }
                 }
