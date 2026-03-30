@@ -40,7 +40,7 @@ impl HttpRequest {
 
 pub struct HttpResponse {
     stream:AsyncTcpStream,
-    status:u16,
+    pub status:u16,
     header:HashMap<String, String>,
     accept_gzip:bool,
     set_cookies: Vec<String>,
