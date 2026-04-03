@@ -32,14 +32,13 @@ impl AsyncProtocol for Smtp {
                         stream.write_all(b"250 Ok\r\n").await?;
                     },
                     "" => {
-                        session.is_content = true;
+                        session.content.push('\n');
                     },
                     _ => {
-                        if session.is_content {
-                            session.content.push_str(
-                                line_buf.trim_end_matches( &['\r','\n'][..] )
-                            );
-                        }
+                        session.content.push_str(
+                            line_buf.trim_end_matches( &['\r','\n'][..] )
+                        );
+                        session.content.push('\n');
                     }
                 }
 

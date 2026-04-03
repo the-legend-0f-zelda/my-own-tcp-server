@@ -10,3 +10,4 @@ rustls = "0.23"
 rustls-pemfile = "2.2.0"
 mio = { version = "1", features = ["os-poll", "net"] }
 crossbeam-queue = "0.3"
+flate2 = "1.1.9"

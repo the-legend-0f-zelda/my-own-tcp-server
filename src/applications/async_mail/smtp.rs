@@ -8,7 +8,6 @@ pub struct SmtpSession {
     pub subject: String,
     pub content: String,
     pub is_data: bool,
-    pub is_content: bool,
     pub use_tls: bool,
     pub quit: bool,
 }
@@ -24,7 +23,6 @@ impl SmtpSession {
             subject: String::new(),
             content: String::new(),
             is_data: false,
-            is_content: false,
             use_tls: false,
             quit: false,
         }
