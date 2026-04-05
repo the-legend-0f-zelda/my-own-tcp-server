@@ -1,7 +1,7 @@
 use std::{future, sync::{Arc, Mutex}, task::{Context, Poll}};
 
 pub fn tokio_bridge<F, T>(tokio_fut: F) -> impl Future<Output = T>
-where F: Future<Output = T> + Send + Sync + 'static,
+where F: Future<Output = T> + Send + 'static,
     T: Send + 'static
 {
     let mut tf = Some(tokio_fut);
