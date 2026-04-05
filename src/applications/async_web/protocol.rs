@@ -138,6 +138,7 @@ impl AsyncProtocol for Http {
                     }
                 },
             };
+
             self.handle_aop(
                 Phase::PostHandle,
                 endpoint.as_str(),
@@ -145,6 +146,7 @@ impl AsyncProtocol for Http {
                 &mut response,
             )
             .await;
+
             result
         })
     }
@@ -252,9 +254,7 @@ impl Http {
 
             match self.handlers.get(&(method.clone(), search)) {
                 Some(handler) => return Some(handler),
-                None => {
-                    continue;
-                }
+                None => continue
             }
         }
 

@@ -26,6 +26,7 @@ pub type AsyncConnectionFuture<'a> = Pin<Box<dyn Future<Output = io::Result<usiz
 
 static FIO_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
+
 pub struct AsyncFile {
     file: Option<File>,
     pub len: usize,
@@ -179,7 +180,7 @@ impl AsyncTcpStream {
         let mut chunk = [0u8; 4096];
 
         let read_result = match self.tls {
-            Some(ref mut tls) => self.read_tls_chunk(&mut chunk),
+            Some(ref mut _tls) => self.read_tls_chunk(&mut chunk),
             None => self.stream.read(&mut chunk),
         };
 
@@ -398,12 +399,8 @@ struct TaskWaker {
 impl Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
         match self.task.lock().unwrap().take() {
-            Some(task) => {
-                self.task_queue.push(task);
-            }
-            None => {
-                self.woken.store(true, Ordering::SeqCst);
-            }
+            Some(task) => { self.task_queue.push(task); }
+            None => { self.woken.store(true, Ordering::SeqCst); }
         }
     }
 }
