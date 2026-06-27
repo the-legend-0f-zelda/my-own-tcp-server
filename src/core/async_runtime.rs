@@ -543,7 +543,8 @@ impl Server {
                     continue;
                 }
             };
-            std_stream.set_read_timeout(self.read_timeout).unwrap();
+            //std_stream.set_read_timeout(self.read_timeout).unwrap();
+            let _r = std_stream.set_nonblocking(true);
             let mut stream = TcpStream::from_std(std_stream);
 
             let token = self.next_token();
