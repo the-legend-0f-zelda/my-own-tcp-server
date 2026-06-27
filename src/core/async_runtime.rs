@@ -234,12 +234,17 @@ impl AsyncTcpStream {
 
     fn poll_write(&mut self, buf: &[u8], cx: &mut Context) -> Poll<io::Result<usize>> {
         let write_result = match self.tls {
-            Some(ref mut tls) => match tls.writer().write(buf) {
-                Ok(n) => {
-                    tls.write_tls(&mut self.stream)?;
-                    Ok(n)
+            Some(ref mut tls) => {
+                // TLS 사용시 평문 바이트 수는 상위 호출자(write_all) 에서 미리 누적함
+                // -> 여기에서 별도로 추가적인 쓰기 바이트 수 반환하면 안됨. -> Ok(0)
+                let mut tls_result = Ok(0);
+                while tls.wants_write() {
+                    if let Err(e) = tls.write_tls(&mut self.stream) {
+                        tls_result = Err(e);
+                        break;
+                    }
                 }
-                Err(e) => Err(e),
+                tls_result
             },
             None => self.stream.write(buf),
         };
@@ -255,7 +260,7 @@ impl AsyncTcpStream {
 
                 self.event_manager.delegate(self.token, cx.waker().clone());
                 Poll::Pending
-            }
+            },
             Err(e) => Poll::Ready(Err(e)),
         }
     }
@@ -266,6 +271,13 @@ impl AsyncTcpStream {
     pub async fn write_all(&mut self, data: &[u8]) -> io::Result<usize> {
         let mut written = 0;
         while written < data.len() {
+            // TLS 연결 사용시 rustls 암호화 버퍼에 미리 데이터 로드,
+            // -> 평문 바이트 수 미리 누적
+            // -> 따라서 self.write(&data[written..]).await 코드에서 주어진 배열 인자가 실제로 사용되지 않음
+            if let Some(tls) = &mut self.tls {
+                written += tls.writer().write(&data[written..])?;
+            }
+
             written += self.write(&data[written..]).await?
         }
         Ok(written)
