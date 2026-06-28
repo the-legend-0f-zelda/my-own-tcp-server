@@ -177,6 +177,8 @@ impl AsyncTcpStream {
     }
 
     fn poll_load_buf(&mut self, cx: &mut Context) -> Poll<io::Result<usize>> {
+        self.event_manager.delegate(self.token, cx.waker().clone());
+
         let mut chunk = [0u8; 4096];
 
         let read_result = match self.tls {
@@ -187,13 +189,16 @@ impl AsyncTcpStream {
         match read_result {
             Ok(n) => {
                 self.read_buf.extend_from_slice(&chunk[..n]);
+                self.event_manager.undelegate(self.token);
                 Poll::Ready(Ok(n))
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                self.event_manager.delegate(self.token, cx.waker().clone());
                 Poll::Pending
             }
-            Err(e) => Poll::Ready(Err(e)),
+            Err(e) => {
+                self.event_manager.undelegate(self.token);
+                Poll::Ready(Err(e))
+            }
         }
     }
     fn load_buf(&mut self) -> impl Future<Output = io::Result<usize>> + '_ {
@@ -359,6 +364,10 @@ impl EventManager {
 
     fn delegate(&self, token: Token, waker: Waker) {
         self.waker_vtable.lock().unwrap().insert(token, waker);
+    }
+
+    fn undelegate(&self, token: Token) {
+        self.waker_vtable.lock().unwrap().remove(&token);
     }
 
     fn get_registry_clone(&self) -> Registry {
