@@ -139,6 +139,7 @@ pub struct AsyncTcpStream {
 }
 impl Drop for AsyncTcpStream {
     fn drop(&mut self) {
+        self.event_manager.undelegate(self.token);
         let _r = self.registry.deregister(&mut self.stream);
     }
 }
@@ -165,14 +166,25 @@ impl AsyncTcpStream {
 
     fn read_tls_chunk(&mut self, chunk: &mut [u8]) -> io::Result<usize> {
         let tls = self.tls.as_mut().unwrap();
-        match tls.reader().read(chunk) {
-            Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                tls.read_tls(&mut self.stream)?; // WouldBlock 그대로 반환 => 이후 비동기처리 ㅇㅇ
-                tls.process_new_packets()
-                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-                tls.reader().read(chunk)
+
+        loop {
+            // rustls 버퍼에 남아있는 내용 복호화 시도
+            // 이전 루프에서 tls.read_tls 결과가 Ok(n) 일때
+            // 이번 루프에서 Ok(0)=EOF 인 경우, 버퍼에 남아있는 내용을 반환하지 않고 끝나는 경우를 방지하기 위해
+            // 복호화 -> 평문 반환시도 순으로 실행
+            tls.process_new_packets()
+                .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+            // rustls 버퍼에 완성된 평문이 발생한 경우
+            // 또는 이전 호출에서 한번에 반환하지 못한 평문이 남은 경우 요청 버퍼에 담아 바로 반환
+            if !tls.wants_read() {
+                return tls.reader().read(chunk);
             }
-            other => other,
+            // 완성된 평문이 없으면 소켓에서 추가 적재 시도
+            match tls.read_tls(&mut self.stream) {
+                Ok(0) => return Ok(0), // 상대측 연결 종료 (소켓 EOF)
+                Ok(_) => {}, // 소켓에서 추가로 받아낸 암호문이 존재함 -> 다음 루프 실행
+                Err(e) => return Err(e) // WouldBlock 포함 에러 -> 상위 호출자가 비동기 또는 에러 처리
+            }
         }
     }
 
@@ -420,7 +432,7 @@ struct TaskWaker {
 impl Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
         match self.task.lock().unwrap().take() {
-            Some(task) => { self.task_queue.push(task); }
+            Some(task) => { self.task_queue.push(task);},
             None => { self.woken.store(true, Ordering::SeqCst); }
         }
     }
