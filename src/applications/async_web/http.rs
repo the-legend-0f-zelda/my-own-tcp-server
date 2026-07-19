@@ -1,4 +1,5 @@
-use crate::runtime::async_io::{AsyncFile, AsyncTcpStream};
+use crate::runtime::fs::AsyncFile;
+use crate::runtime::net::AsyncTcpStream;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::Value;

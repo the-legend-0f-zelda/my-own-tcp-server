@@ -1,9 +1,8 @@
 use crate::applications::async_web::default::{BAD_REQUEST, INTERNAL_SERVER_ERROR, NOT_FOUND};
 use crate::applications::async_web::http::Method::ANY;
 use crate::applications::async_web::http::{HttpFunction, HttpRequest, HttpResponse, Method};
-use crate::runtime::AsyncConnectionFuture;
 use crate::runtime::AsyncProtocol;
-use crate::runtime::async_io::AsyncTcpStream;
+use crate::runtime::net::{AsyncConnectionFuture, AsyncTcpStream};
 use rustls::ServerConfig;
 use serde_json::Value;
 use std::collections::HashMap;
