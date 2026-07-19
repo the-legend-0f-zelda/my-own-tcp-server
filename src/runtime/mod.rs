@@ -16,8 +16,10 @@ use std::{io, thread};
 
 use crate::runtime::async_io::AsyncTcpStream;
 
+
 pub mod bridge;
 pub mod async_io;
+
 
 pub trait AsyncProtocol: Send + Sync + 'static {
     fn handle_async_connection(&self, stream: AsyncTcpStream) -> AsyncConnectionFuture<'_>;
@@ -27,12 +29,12 @@ pub type AsyncConnectionFuture<'a> = Pin<Box<dyn Future<Output = io::Result<usiz
 static FIO_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
 
-pub struct EventManager {
+pub struct Reactor {
     event_queue: Mutex<Events>,
     poll: Mutex<mio::Poll>,
     waker_vtable: Mutex<HashMap<Token, Waker>>,
 }
-impl EventManager {
+impl Reactor {
     pub fn new() -> Self {
         Self {
             event_queue: Mutex::new(Events::with_capacity(1024)),
@@ -212,7 +214,7 @@ impl ThreadPool {
 
 pub struct Server {
     port_mappings: HashMap<u16, Arc<dyn AsyncProtocol>>,
-    event_manager: Arc<EventManager>,
+    reactor: Arc<Reactor>,
     nio_pool: ThreadPool,
     max_nio_threads: usize,
     max_fio_threads: usize,
@@ -225,7 +227,7 @@ impl Server {
     pub fn new() -> Self {
         Self {
             port_mappings: HashMap::new(),
-            event_manager: Arc::new(EventManager::new()),
+            reactor: Arc::new(Reactor::new()),
             nio_pool: ThreadPool::new(),
             max_nio_threads: 1,
             max_fio_threads: 1,
@@ -265,14 +267,14 @@ impl Server {
         println!("listening on port {}", port);
 
         loop {
-            let (std_stream, peer) = match listener.accept() {
-                Ok((stream, peer)) => (stream, peer),
+            let (std_stream, _peer) = match listener.accept() {
+                Ok((stream, _peer)) => (stream, _peer),
                 Err(e) => {
                     println!("accept error {}", e);
                     continue;
                 }
             };
-            //std_stream.set_read_timeout(self.read_timeout).unwrap();
+
             let _r = std_stream.set_nonblocking(true);
             let mut stream = TcpStream::from_std(std_stream);
 
@@ -288,7 +290,7 @@ impl Server {
                 None => continue,
             };
 
-            let event_manager = Arc::clone(&self.event_manager);
+            let event_manager = Arc::clone(&self.reactor);
 
             let task: AsyncTask = Box::pin(async move {
                 let async_stream = AsyncTcpStream::new(stream, token, event_manager, registry);
@@ -311,12 +313,12 @@ impl Server {
         });
 
         let server = Arc::new(self);
-        let event_manager = Arc::clone(&server.event_manager);
+        let reactor = Arc::clone(&server.reactor);
 
         for port in &server.port_mappings {
             let server_clone = Arc::clone(&server);
             let port_clone = *port.0;
-            let registry_clone = event_manager.get_registry_clone();
+            let registry_clone = reactor.get_registry_clone();
 
             let port_handle = thread::spawn(move || {
                 server_clone.listen_port(port_clone, registry_clone);
@@ -324,7 +326,7 @@ impl Server {
             join_handles.push(port_handle);
         }
 
-        let event_loop = event_manager.run();
+        let event_loop = reactor.run();
         join_handles.push(event_loop);
 
         for handle in join_handles {

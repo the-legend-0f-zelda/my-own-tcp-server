@@ -6,7 +6,7 @@ use std::{
 };
 use mio::{Interest, Registry, Token, net::TcpStream};
 use rustls::{ServerConfig, ServerConnection};
-use crate::runtime::{AsyncTask, EventManager, FIO_POOL};
+use crate::runtime::{AsyncTask, Reactor, FIO_POOL};
 
 
 pub struct AsyncFile {
@@ -115,13 +115,13 @@ pub struct AsyncTcpStream {
     stream: TcpStream,
     token: Token,
     read_buf: Vec<u8>,
-    event_manager: Arc<EventManager>,
+    reactor: Arc<Reactor>,
     registry: Registry,
     tls: Option<ServerConnection>,
 }
 impl Drop for AsyncTcpStream {
     fn drop(&mut self) {
-        self.event_manager.undelegate(self.token);
+        self.reactor.undelegate(self.token);
         let _r = self.registry.deregister(&mut self.stream);
     }
 }
@@ -129,14 +129,14 @@ impl AsyncTcpStream {
     pub fn new(
         stream: TcpStream,
         token: Token,
-        event_manager: Arc<EventManager>,
+        reactor: Arc<Reactor>,
         registry: Registry,
     ) -> Self {
         Self {
             stream,
             token,
             read_buf: Vec::new(),
-            event_manager,
+            reactor,
             registry,
             tls: None,
         }
@@ -171,7 +171,7 @@ impl AsyncTcpStream {
     }
 
     fn poll_load_buf(&mut self, cx: &mut Context) -> Poll<io::Result<usize>> {
-        self.event_manager.delegate(self.token, cx.waker().clone());
+        self.reactor.delegate(self.token, cx.waker().clone());
 
         let mut chunk = [0u8; 4096];
 
@@ -183,14 +183,14 @@ impl AsyncTcpStream {
         match read_result {
             Ok(n) => {
                 self.read_buf.extend_from_slice(&chunk[..n]);
-                self.event_manager.undelegate(self.token);
+                self.reactor.undelegate(self.token);
                 Poll::Ready(Ok(n))
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
                 Poll::Pending
             }
             Err(e) => {
-                self.event_manager.undelegate(self.token);
+                self.reactor.undelegate(self.token);
                 Poll::Ready(Err(e))
             }
         }
@@ -257,7 +257,7 @@ impl AsyncTcpStream {
                     Interest::READABLE | Interest::WRITABLE,
                 )?;
 
-                self.event_manager.delegate(self.token, cx.waker().clone());
+                self.reactor.delegate(self.token, cx.waker().clone());
                 Poll::Pending
             },
             Err(e) => Poll::Ready(Err(e)),
