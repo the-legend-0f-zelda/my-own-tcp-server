@@ -61,19 +61,19 @@ impl Reactor {
     }
 
     pub(crate) fn run(self: Arc<Self>) -> JoinHandle<()> {
-        let manager = Arc::clone(&self);
+        let reactor = Arc::clone(&self);
         thread::spawn(move || {
-            let mut event_queue = manager.event_queue.lock().unwrap();
+            let mut event_queue = reactor.event_queue.lock().unwrap();
 
             loop {
-                let mut poll = manager.poll.lock().unwrap();
+                let mut poll = reactor.poll.lock().unwrap();
                 if let Err(_e) = poll.poll(&mut event_queue, None) {
                     // block
                     continue; // todo log error
                 }
                 drop(poll);
 
-                let mut waker_vtable = manager.waker_vtable.lock().unwrap();
+                let mut waker_vtable = reactor.waker_vtable.lock().unwrap();
                 // !!! 이벤트 알림와서 웨이커 깨우는동안 작업스레드 Pending 발생시 토큰:웨이커 저장 및 Pending 반환 지연
                 // TODO 현재 이벤트루프 스레드에서 vtable에 락걸고 들어온 이벤트 iterate
                 // => 이벤트 탐색하는동안 다른 워커스레드에서 delegate() 불가

@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll}
 };
-use mio::{Interest, Registry, Token, net::TcpStream};
+use mio::{Interest, Registry, Token, event::Source, net::TcpStream};
 use rustls::{ServerConfig, ServerConnection};
 use crate::runtime::Reactor;
 
@@ -155,13 +155,12 @@ impl AsyncTcpStream {
         match write_result {
             Ok(n) => Poll::Ready(Ok(n)),
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                self.reactor.delegate(self.token, cx.waker().clone());
                 self.registry.reregister(
                     &mut self.stream,
                     self.token,
                     Interest::READABLE | Interest::WRITABLE,
                 )?;
-
-                self.reactor.delegate(self.token, cx.waker().clone());
                 Poll::Pending
             },
             Err(e) => Poll::Ready(Err(e)),
@@ -183,6 +182,13 @@ impl AsyncTcpStream {
 
             written += self.write(&data[written..]).await?
         }
+
+        self.registry.reregister(
+            &mut self.stream,
+            self.token,
+            Interest::READABLE
+        )?;
+
         Ok(written)
     }
 
